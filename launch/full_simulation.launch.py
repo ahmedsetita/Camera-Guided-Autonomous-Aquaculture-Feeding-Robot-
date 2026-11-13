@@ -9,9 +9,10 @@ Launches:
   4. `rviz2` pre-configured with `rviz/aqua_robot.rviz` (3D Robot, Pond Map, Fish Schools, Paths, Camera HUD)
   5. `pond_rviz_visualizer_node.py` (2D OccupancyGrid `/map` + 3D `/pond/markers` & trajectories)
   6. `esp32_sim_node.py` (or `esp32_serial_bridge_node.py` if `use_real_hardware:=true`)
-  7. `fish_vision_node.py` (OpenCV Fish Feeding Activity & Water Status HUD)
-  8. `autonomous_brain_node.py` (4-State FSM & Closed-Loop PID Autonomous Pond Patrol)
-  9. `aqua_control_gui.py` (Live Aquaculture Camera & ESP32 Telemetry Command Center GUI)
+  7. `fish_vision_node.py` (OpenCV Colored Buoy Detection + Fish Feeding Demand HUD)
+  8. `autonomous_brain_node.py` (5-State Camera Visual Servoing + 4x Ultrasonic FSM)
+  9. `aqua_web_dashboard_node.py` (Live Water Quality Web Dashboard on http://localhost:8080)
+  10. `aqua_control_gui.py` (Optional Desktop Telemetry Window)
 """
 
 import os
@@ -28,6 +29,7 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 import xacro
 
 
@@ -77,10 +79,25 @@ def generate_launch_description() -> LaunchDescription:
         default_value="true",
         description="Launch RViz2 3D Aquaculture Pond & Navigation view",
     )
+    web_dashboard_arg = DeclareLaunchArgument(
+        "web_dashboard",
+        default_value="true",
+        description="Launch Live Water Quality Web Dashboard Server (http://localhost:8080)",
+    )
+    web_port_arg = DeclareLaunchArgument(
+        "web_port",
+        default_value="8080",
+        description="HTTP port for Live Water Quality Web Dashboard",
+    )
+    open_browser_arg = DeclareLaunchArgument(
+        "open_browser",
+        default_value="true",
+        description="Automatically open the Live Water Quality Web Dashboard in the browser",
+    )
     control_gui_arg = DeclareLaunchArgument(
         "control_gui",
-        default_value="true",
-        description="Launch Live Aquaculture Camera & ESP32 Telemetry Control Center GUI",
+        default_value="false",
+        description="Launch optional Desktop Tkinter Aquaculture Control Center GUI",
     )
     use_real_hw_arg = DeclareLaunchArgument(
         "use_real_hardware",
@@ -96,6 +113,9 @@ def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
     gui = LaunchConfiguration("gui")
     rviz = LaunchConfiguration("rviz")
+    web_dashboard = LaunchConfiguration("web_dashboard")
+    web_port = LaunchConfiguration("web_port")
+    open_browser = LaunchConfiguration("open_browser")
     control_gui = LaunchConfiguration("control_gui")
     use_real_hardware = LaunchConfiguration("use_real_hardware")
     serial_port = LaunchConfiguration("serial_port")
@@ -220,7 +240,7 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[{"use_sim_time": use_sim_time}],
     )
 
-    # 9. Autonomous Brain & Closed-Loop PID FSM Controller Node
+    # 9. Autonomous Brain (Pure Camera Buoy Servoing + 4x Ultrasonic Avoidance FSM)
     autonomous_brain_node = Node(
         package="aquaculture_autonomous_robot",
         executable="autonomous_brain_node.py",
@@ -232,17 +252,28 @@ def generate_launch_description() -> LaunchDescription:
                 "target_feed_dose_g": 250.0,
                 "low_feed_threshold_g": 300.0,
                 "feeding_demand_threshold_pct": 35.0,
-                "min_safe_do_mg_l": 4.0,
-                "min_safe_ph": 6.5,
-                "max_safe_ph": 8.5,
-                "max_safe_temp_c": 32.0,
                 "inspection_duration_sec": 2.5,
-                "waypoint_tolerance_m": 0.25,
+                "buoy_cooldown_sec": 32.0,
             }
         ],
     )
 
-    # 10. Live Aquaculture Control Center & Telemetry Dashboard GUI
+    # 10. Live Water Quality Web Dashboard Server (http://localhost:8080)
+    aqua_web_dashboard_node = Node(
+        package="aquaculture_autonomous_robot",
+        executable="aqua_web_dashboard_node.py",
+        name="aqua_web_dashboard_node",
+        output="screen",
+        parameters=[
+            {
+                "port": ParameterValue(web_port, value_type=int),
+                "open_browser": ParameterValue(open_browser, value_type=bool),
+            }
+        ],
+        condition=IfCondition(web_dashboard),
+    )
+
+    # 11. Optional Desktop Tkinter Control Center GUI
     aqua_control_gui_node = Node(
         package="aquaculture_autonomous_robot",
         executable="aqua_control_gui.py",
@@ -257,6 +288,9 @@ def generate_launch_description() -> LaunchDescription:
             use_sim_time_arg,
             gui_arg,
             rviz_arg,
+            web_dashboard_arg,
+            web_port_arg,
+            open_browser_arg,
             control_gui_arg,
             use_real_hw_arg,
             serial_port_arg,
@@ -270,6 +304,7 @@ def generate_launch_description() -> LaunchDescription:
             esp32_serial_bridge_node,
             fish_vision_node,
             autonomous_brain_node,
+            aqua_web_dashboard_node,
             aqua_control_gui_node,
         ]
     )

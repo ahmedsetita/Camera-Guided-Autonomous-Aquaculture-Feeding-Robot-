@@ -26,37 +26,46 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import Point, PoseStamped
 from nav_msgs.msg import MapMetaData, OccupancyGrid, Odometry, Path
+from sensor_msgs.msg import Range
 from std_msgs.msg import Bool, Float32, String
 from visualization_msgs.msg import Marker, MarkerArray
 
 
 class PondRvizVisualizerNode(Node):
-    """Generates OccupancyGrid map, 3D pond markers, fish schools, and paths for RViz2."""
+    """Generates OccupancyGrid map, 3D pond markers, buoys, ultrasonic cones, fish & trails for RViz2."""
 
     def __init__(self) -> None:
         super().__init__("pond_rviz_visualizer_node")
 
         self.robot_x: float = 0.0
         self.robot_y: float = 0.0
+        self.robot_yaw: float = 0.0
         self.valve_open: bool = False
-        self.fsm_state: str = "PATROL"
+        self.fsm_state: str = "RANDOM_SEARCH"
         self.feeding_demand: float = 0.0
+        self.us_ranges: Dict[str, float] = {
+            "front": 4.5,
+            "left": 4.5,
+            "right": 4.5,
+            "rear": 4.5,
+        }
         self.sensors: Dict[str, float] = {
             "weight": 5000.0,
-            "ph": 7.50,
-            "do": 6.50,
-            "turbidity": 12.0,
-            "temp": 25.0,
+            "ph": 7.60,
+            "do": 6.80,
+            "turbidity": 33.0,
+            "temp": 28.1,
         }
         self.start_time = self.get_clock().now()
 
-        # Zones: (id, label, x, y, r, g, b, fish_count)
-        self.zones: List[Tuple[int, str, float, float, float, float, float, int]] = [
-            (1, "ZONE 1: High Fish Aggregation (Depleted Feed)", 3.5, 3.5, 0.0, 0.85, 0.95, 10),
-            (2, "ZONE 2: Normal Balanced Zone", -3.5, 3.5, 0.15, 0.80, 0.45, 5),
-            (3, "ZONE 3: CRITICAL HYPOXIA & ACIDIC pH", -3.5, -3.5, 0.90, 0.15, 0.35, 2),
-            (4, "ZONE 4: Active School & Sediment Agitation", 3.5, -3.5, 0.10, 0.70, 0.95, 8),
+        # Zones with matching colored guidance buoys: (id, label, x, y, buoy_rgb, fish_count)
+        self.zones: List[Tuple[int, str, float, float, Tuple[float, float, float], int]] = [
+            (1, "GREEN BUOY: High Fish Demand", 3.5, 3.5, (0.05, 0.96, 0.15), 10),
+            (2, "YELLOW BUOY: Balanced Water", -3.5, 3.5, (0.98, 0.92, 0.05), 3),
+            (3, "RED BUOY: LOW OXYGEN & ACIDIC pH", -3.5, -3.5, (0.98, 0.05, 0.05), 2),
+            (4, "MAGENTA BUOY: Active School", 3.5, -3.5, (0.96, 0.06, 0.80), 8),
         ]
+        self.obstacles: List[Tuple[float, float]] = [(1.6, -1.6), (-1.7, 1.5)]
 
         # Subscribers
         self.create_subscription(Odometry, "/odom", self.odom_cb, 10)
@@ -64,6 +73,10 @@ class PondRvizVisualizerNode(Node):
         self.create_subscription(String, "/brain/state", self.state_cb, 10)
         self.create_subscription(String, "/esp32/sensors_filtered", self.sensors_cb, 10)
         self.create_subscription(Float32, "/vision/feeding_demand", self.demand_cb, 10)
+        self.create_subscription(Range, "/ultrasonic/front", lambda m: self._us_cb("front", m), 10)
+        self.create_subscription(Range, "/ultrasonic/left", lambda m: self._us_cb("left", m), 10)
+        self.create_subscription(Range, "/ultrasonic/right", lambda m: self._us_cb("right", m), 10)
+        self.create_subscription(Range, "/ultrasonic/rear", lambda m: self._us_cb("rear", m), 10)
 
         # Transient local QoS for /map so RViz2 always receives it
         map_qos = QoSProfile(
@@ -87,9 +100,19 @@ class PondRvizVisualizerNode(Node):
 
         self.get_logger().info("Pond RViz2 3D Visualizer Node initialized (/map, /pond/markers, /pond/patrol_path).")
 
+    def _us_cb(self, side: str, msg: Range) -> None:
+        r = float(msg.range)
+        if math.isnan(r) or math.isinf(r):
+            r = 4.5
+        self.us_ranges[side] = max(0.08, min(4.5, r))
+
     def odom_cb(self, msg: Odometry) -> None:
         self.robot_x = msg.pose.pose.position.x
         self.robot_y = msg.pose.pose.position.y
+        q = msg.pose.pose.orientation
+        siny = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        self.robot_yaw = math.atan2(siny, cosy)
 
         # Append to robot trail if moved > 0.08m
         if not self.robot_trail.poses:
@@ -239,8 +262,8 @@ class PondRvizVisualizerNode(Node):
         dock_txt.text = "HOME DOCK & FEED REFILL (0, 0)"
         ma.markers.append(dock_txt)
 
-        # 3. 4 Feeding Zones + Animated Swimming Fish Schools
-        for zid, zlabel, zx, zy, cr, cg, cb, num_fish in self.zones:
+        # 3. 4 Feeding Zones + Colored Floating Buoys + Animated Swimming Fish Schools
+        for zid, zlabel, zx, zy, (cr, cg, cb), num_fish in self.zones:
             z_disc = Marker()
             z_disc.header.frame_id = "map"
             z_disc.header.stamp = stamp
@@ -259,8 +282,30 @@ class PondRvizVisualizerNode(Node):
             z_disc.color.r = cr
             z_disc.color.g = cg
             z_disc.color.b = cb
-            z_disc.color.a = 0.55
+            z_disc.color.a = 0.30
             ma.markers.append(z_disc)
+
+            # Floating Colored Buoy Sphere
+            buoy_m = Marker()
+            buoy_m.header.frame_id = "map"
+            buoy_m.header.stamp = stamp
+            buoy_m.ns = "pond_zones"
+            buoy_m.id = marker_id
+            marker_id += 1
+            buoy_m.type = Marker.SPHERE
+            buoy_m.action = Marker.ADD
+            buoy_m.pose.position.x = zx
+            buoy_m.pose.position.y = zy
+            buoy_m.pose.position.z = 0.28
+            buoy_m.pose.orientation.w = 1.0
+            buoy_m.scale.x = 0.56
+            buoy_m.scale.y = 0.56
+            buoy_m.scale.z = 0.56
+            buoy_m.color.r = cr
+            buoy_m.color.g = cg
+            buoy_m.color.b = cb
+            buoy_m.color.a = 1.0
+            ma.markers.append(buoy_m)
 
             z_txt = Marker()
             z_txt.header.frame_id = "map"
@@ -272,7 +317,7 @@ class PondRvizVisualizerNode(Node):
             z_txt.action = Marker.ADD
             z_txt.pose.position.x = zx
             z_txt.pose.position.y = zy
-            z_txt.pose.position.z = 0.70
+            z_txt.pose.position.z = 0.85
             z_txt.scale.z = 0.26
             z_txt.color.r = 1.0
             z_txt.color.g = 1.0 if zid != 3 else 0.4
@@ -281,9 +326,9 @@ class PondRvizVisualizerNode(Node):
             z_txt.text = zlabel
             ma.markers.append(z_txt)
 
-            # Animated swimming fish markers in each zone
+            # Animated swimming fish markers orbiting outside the buoy
             for f_idx in range(num_fish):
-                orbit_r = 0.25 + 0.10 * (f_idx % 4) + 0.15 * (f_idx // 4)
+                orbit_r = 0.45 + 0.12 * (f_idx % 4) + 0.14 * (f_idx // 4)
                 speed = 0.9 + 0.15 * (f_idx % 3)
                 angle = t_sec * speed + f_idx * (2.0 * math.pi / max(1, num_fish))
                 fx = zx + orbit_r * math.cos(angle)
@@ -307,10 +352,66 @@ class PondRvizVisualizerNode(Node):
                 fish_m.scale.y = 0.11
                 fish_m.scale.z = 0.08
                 fish_m.color.r = 1.0
-                fish_m.color.g = 0.45
-                fish_m.color.b = 0.05
+                fish_m.color.g = 0.50
+                fish_m.color.b = 0.04
                 fish_m.color.a = 0.95
                 ma.markers.append(fish_m)
+
+        # 3B. Mid-Pond Obstacle Pillars (for Ultrasonic Avoidance Visualization)
+        for ox, oy in self.obstacles:
+            obs_m = Marker()
+            obs_m.header.frame_id = "map"
+            obs_m.header.stamp = stamp
+            obs_m.ns = "pond_zones"
+            obs_m.id = marker_id
+            marker_id += 1
+            obs_m.type = Marker.CYLINDER
+            obs_m.action = Marker.ADD
+            obs_m.pose.position.x = ox
+            obs_m.pose.position.y = oy
+            obs_m.pose.position.z = 0.42
+            obs_m.pose.orientation.w = 1.0
+            obs_m.scale.x = 0.64
+            obs_m.scale.y = 0.64
+            obs_m.scale.z = 0.84
+            obs_m.color.r = 0.35
+            obs_m.color.g = 0.38
+            obs_m.color.b = 0.44
+            obs_m.color.a = 1.0
+            ma.markers.append(obs_m)
+
+        # 3C. 4-Side Live Ultrasonic Beam Lines (Front, Left, Right, Rear)
+        side_angles = [
+            ("front", 0.0),
+            ("left", math.pi / 2.0),
+            ("right", -math.pi / 2.0),
+            ("rear", math.pi),
+        ]
+        for side_name, rel_ang in side_angles:
+            dist = min(2.8, self.us_ranges.get(side_name, 4.5))
+            world_ang = self.robot_yaw + rel_ang
+            sx = self.robot_x + 0.47 * math.cos(world_ang)
+            sy = self.robot_y + 0.47 * math.sin(world_ang)
+            ex = sx + dist * math.cos(world_ang)
+            ey = sy + dist * math.sin(world_ang)
+
+            ray_m = Marker()
+            ray_m.header.frame_id = "map"
+            ray_m.header.stamp = stamp
+            ray_m.ns = "robot_hud"
+            ray_m.id = marker_id
+            marker_id += 1
+            ray_m.type = Marker.LINE_LIST
+            ray_m.action = Marker.ADD
+            ray_m.scale.x = 0.04
+            near_obs = dist < 1.25
+            ray_m.color.r = 1.0 if near_obs else 0.10
+            ray_m.color.g = 0.30 if near_obs else 0.90
+            ray_m.color.b = 0.15 if near_obs else 1.0
+            ray_m.color.a = 0.85
+            ray_m.points.append(Point(x=sx, y=sy, z=0.26))
+            ray_m.points.append(Point(x=ex, y=ey, z=0.26))
+            ma.markers.append(ray_m)
 
         # 4. Floating Live Robot Status HUD in RViz2 above aqua_robot
         hud_marker = Marker()
@@ -324,7 +425,7 @@ class PondRvizVisualizerNode(Node):
         hud_marker.pose.position.x = self.robot_x
         hud_marker.pose.position.y = self.robot_y
         hud_marker.pose.position.z = 1.25
-        hud_marker.scale.z = 0.24
+        hud_marker.scale.z = 0.22
         hud_marker.color.r = 0.2 if not self.valve_open else 1.0
         hud_marker.color.g = 1.0
         hud_marker.color.b = 0.4 if not self.valve_open else 0.1
@@ -332,8 +433,8 @@ class PondRvizVisualizerNode(Node):
         hud_marker.text = (
             f"[{self.fsm_state}] Hopper: {self.sensors['weight']:.0f}g | "
             f"Valve: {'OPEN (FEEDING!)' if self.valve_open else 'CLOSED'}\n"
-            f"pH: {self.sensors['ph']:.2f} | DO: {self.sensors['do']:.2f}mg/L | "
-            f"Temp: {self.sensors['temp']:.1f}C | Demand: {self.feeding_demand:.0f}%"
+            f"DO:{self.sensors['do']:.1f} pH:{self.sensors['ph']:.1f} T:{self.sensors['temp']:.1f}C | "
+            f"Sonar F:{self.us_ranges['front']:.1f} L:{self.us_ranges['left']:.1f} R:{self.us_ranges['right']:.1f}"
         )
         ma.markers.append(hud_marker)
 
@@ -369,28 +470,11 @@ class PondRvizVisualizerNode(Node):
 
         self.markers_pub.publish(ma)
 
-        # 6. Publish Planned Patrol Loop Path
-        patrol_path = Path()
-        patrol_path.header.frame_id = "map"
-        patrol_path.header.stamp = stamp
-        loop_pts = [
-            (0.0, 0.0),
-            (3.18, 3.18),
-            (-3.18, 3.18),
-            (-3.18, -3.18),
-            (3.18, -3.18),
-            (0.0, 0.0),
-        ]
-        for px, py in loop_pts:
-            ps = PoseStamped()
-            ps.header.frame_id = "map"
-            ps.header.stamp = stamp
-            ps.pose.position.x = px
-            ps.pose.position.y = py
-            ps.pose.position.z = 0.04
-            ps.pose.orientation.w = 1.0
-            patrol_path.poses.append(ps)
-        self.patrol_path_pub.publish(patrol_path)
+        # 6. Clear fixed patrol loop (camera vision steers directly toward detected buoys)
+        empty_path = Path()
+        empty_path.header.frame_id = "map"
+        empty_path.header.stamp = stamp
+        self.patrol_path_pub.publish(empty_path)
 
         # 7. Publish Robot Historical Trail
         self.robot_trail.header.stamp = stamp

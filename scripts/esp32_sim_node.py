@@ -143,28 +143,28 @@ class ESP32SensorSimNode(Node):
                 process_variance_q=0.002,
                 measurement_variance_r=0.08,
                 ema_alpha=0.30,
-                initial_value=7.50,
+                initial_value=7.60,
             ),
             "do": MedianKalmanEMAFilter(
                 window_size=7,
                 process_variance_q=0.005,
                 measurement_variance_r=0.12,
                 ema_alpha=0.30,
-                initial_value=6.50,
+                initial_value=6.80,
             ),
             "turbidity": MedianKalmanEMAFilter(
                 window_size=7,
                 process_variance_q=0.2,
                 measurement_variance_r=8.0,
                 ema_alpha=0.30,
-                initial_value=12.0,
+                initial_value=33.0,
             ),
             "temp": MedianKalmanEMAFilter(
                 window_size=7,
                 process_variance_q=0.002,
                 measurement_variance_r=0.06,
                 ema_alpha=0.25,
-                initial_value=25.0,
+                initial_value=28.1,
             ),
         }
 
@@ -228,7 +228,7 @@ class ESP32SensorSimNode(Node):
 
     @staticmethod
     def _gaussian_zone_influence(
-        x: float, y: float, zx: float, zy: float, sigma: float = 1.45
+        x: float, y: float, zx: float, zy: float, sigma: float = 1.85
     ) -> float:
         """Computes smooth radial Gaussian weight [0.0, 1.0] around zone center (zx, zy)."""
         dist_sq = (x - zx) ** 2 + (y - zy) ** 2
@@ -249,7 +249,7 @@ class ESP32SensorSimNode(Node):
         dist_to_home = math.hypot(self.robot_x, self.robot_y)
         if (
             self.auto_refill_at_dock
-            and dist_to_home < 0.45
+            and dist_to_home < 0.75
             and not self.valve_open
             and self.feed_weight_g < 300.0
         ):
@@ -266,42 +266,42 @@ class ESP32SensorSimNode(Node):
         w_z4 = self._gaussian_zone_influence(self.robot_x, self.robot_y, 3.5, -3.5)
 
         # 2. pH Sensor Ground Truth
-        # Normal ~7.5; Zone 3 (-3.5, -3.5) is acidic (drops to ~5.75 < 6.5 threshold)
+        # Healthy pond ~7.6; Zone 3 (Red buoy) is acidic (~5.65 < 6.5 threshold)
         true_ph = (
-            7.50
-            - 0.20 * w_z1
-            + 0.05 * w_z2
-            - 1.75 * w_z3
-            + 0.15 * w_z4
+            7.60
+            - 0.22 * w_z1
+            + 0.04 * w_z2
+            - 2.25 * w_z3
+            + 0.20 * w_z4
         )
 
         # 3. Dissolved Oxygen (DO) Sensor Ground Truth (mg/L)
-        # Normal ~6.5 mg/L; Zone 3 drops to ~3.0 mg/L (< 4.0 mg/L critical hypoxia threshold)
+        # Healthy ~6.8 mg/L; Zone 3 (Red buoy) drops to ~3.0 mg/L (< 5.0 mg/L hypoxia alert)
         true_do = (
-            6.55
-            - 1.35 * w_z1
-            - 0.15 * w_z2
-            - 3.55 * w_z3
-            - 1.10 * w_z4
+            6.80
+            - 0.85 * w_z1
+            + 0.05 * w_z2
+            - 4.45 * w_z3
+            - 1.25 * w_z4
         )
 
-        # 4. Turbidity Sensor Ground Truth (NTU)
-        # Normal ~12 NTU; increases in active fish zones (Z1, Z4) and murky anoxic zone (Z3)
+        # 4. Turbidity Sensor Ground Truth (NTU, mapped also to relative %)
+        # Normal ~33 NTU (~22%); Zone 1 & 4 moderate (~32-36%); Zone 3 murky (~95 NTU / ~63%)
         true_turbidity = (
-            12.0
-            + 34.0 * w_z1
-            + 8.0 * w_z2
-            + 105.0 * w_z3
-            + 56.0 * w_z4
+            33.0
+            + 18.0 * w_z1
+            - 1.5 * w_z2
+            + 75.0 * w_z3
+            + 24.0 * w_z4
         )
 
         # 5. Water Temperature Sensor Ground Truth (Celsius)
-        # Base 25.0C with spatial solar gradient + localized thermal anomaly at Zone 3
+        # Base 28.1C matching pond telemetry, with mild thermal anomaly at Zone 3 (>30C)
         true_temp = (
-            25.0
-            + 0.12 * self.robot_x
-            - 0.08 * self.robot_y
-            + 1.8 * w_z3
+            28.1
+            + 0.06 * self.robot_x
+            - 0.04 * self.robot_y
+            + 3.4 * w_z3
         )
 
         return {
@@ -367,6 +367,7 @@ class ESP32SensorSimNode(Node):
             "ph": round(raw_vals["ph"], 3),
             "do": round(raw_vals["do"], 3),
             "turbidity": round(raw_vals["turbidity"], 2),
+            "turbidity_pct": round(min(100.0, max(0.0, raw_vals["turbidity"] / 1.5)), 1),
             "temp": round(raw_vals["temp"], 2),
             "valve": 1 if self.valve_open else 0,
             "x": round(self.robot_x, 2),
@@ -377,6 +378,7 @@ class ESP32SensorSimNode(Node):
             "ph": round(filtered_vals["ph"], 3),
             "do": round(filtered_vals["do"], 3),
             "turbidity": round(filtered_vals["turbidity"], 2),
+            "turbidity_pct": round(min(100.0, max(0.0, filtered_vals["turbidity"] / 1.5)), 1),
             "temp": round(filtered_vals["temp"], 2),
             "valve": 1 if self.valve_open else 0,
             "x": round(self.robot_x, 2),

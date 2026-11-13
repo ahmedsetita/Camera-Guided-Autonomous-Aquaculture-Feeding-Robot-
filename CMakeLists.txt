@@ -31,6 +31,7 @@ install(PROGRAMS
   scripts/esp32_serial_bridge_node.py
   scripts/pond_rviz_visualizer_node.py
   scripts/aqua_control_gui.py
+  scripts/aqua_web_dashboard_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

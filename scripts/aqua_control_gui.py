@@ -221,12 +221,12 @@ def build_and_run_gui(ros_node: AquaControlDashboardNode) -> None:
     ctrl_frame.pack(fill=tk.BOTH, expand=True)
 
     buttons = [
-        ("AUTO PATROL ALL ZONES (FSM Loop)", "AUTO", "#0284c7"),
-        ("Dispatch -> Zone 1 (3.5, 3.5) [High Fish Demand]", "Z1", "#0d9488"),
-        ("Dispatch -> Zone 2 (-3.5, 3.5) [Balanced Normal]", "Z2", "#059669"),
-        ("Dispatch -> Zone 3 (-3.5, -3.5) [Poor Water / Hypoxic]", "Z3", "#be123c"),
-        ("Dispatch -> Zone 4 (3.5, -3.5) [Active Fish School]", "Z4", "#2563eb"),
-        ("Return to Home Refill Dock (0.0, 0.0)", "HOME", "#4f46e5"),
+        ("AUTO RANDOM SEARCH & CAMERA TRACKING", "AUTO", "#0284c7"),
+        ("Seek -> Green Buoy (Zone 1: High Fish Demand)", "SEEK_GREEN", "#0d9488"),
+        ("Seek -> Yellow Buoy (Zone 2: Balanced Normal)", "SEEK_YELLOW", "#ca8a04"),
+        ("Seek -> Red Buoy (Zone 3: Hypoxic / Acidic)", "SEEK_RED", "#be123c"),
+        ("Seek -> Magenta Buoy (Zone 4: Active School)", "SEEK_MAGENTA", "#9333ea"),
+        ("Pause Robot Movement", "STOP", "#475569"),
     ]
     for text, cmd_code, bg_col in buttons:
         btn = tk.Button(
@@ -309,9 +309,9 @@ def build_and_run_gui(ros_node: AquaControlDashboardNode) -> None:
         )
 
         is_safe = (
-            (filt["do"] >= 4.0)
-            and (6.5 <= filt["ph"] <= 8.5)
-            and (filt["temp"] <= 32.0)
+            (filt["do"] >= 5.0)
+            and (6.5 <= filt["ph"] <= 9.0)
+            and (25.0 <= filt["temp"] <= 30.0)
         )
         sensor_labels["safety"].configure(
             text="SAFE FOR FEEDING" if is_safe else "CRITICAL WATER WARNING (SKIP FEED!)",

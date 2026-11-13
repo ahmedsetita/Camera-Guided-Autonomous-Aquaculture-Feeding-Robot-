@@ -409,7 +409,8 @@
   </joint>
 
   <!-- ===================================================================== -->
-  <!-- 5. SENSORS: DOWNWARD/FORWARD RGB CAMERA & IMU                         -->
+  <!-- 5. SENSORS: FORWARD/DOWNWARD RGB CAMERA, IMU & 4x SIDE ULTRASONICS   -->
+  <!--    (NO LiDAR — Vision + 4-Side Ultrasonic Obstacle Avoidance Only)    -->
   <!-- ===================================================================== -->
   <link name="camera_link">
     <xacro:box_inertial mass="0.15" x="0.05" y="0.08" z="0.05">
@@ -424,11 +425,12 @@
     </visual>
   </link>
 
-  <!-- Pitched downward at 0.75 rad (~43 deg) on the front collar to inspect pond floor & fish -->
+  <!-- Pitched forward-downward at 0.24 rad (~13.8 deg) on the front collar to spot colored
+       buoys across the pond AND frame fish/water pads upon arrival -->
   <joint name="camera_joint" type="fixed">
     <parent link="base_link" />
     <child link="camera_link" />
-    <origin xyz="0.30 0.0 0.48" rpy="0 0.75 0" />
+    <origin xyz="0.32 0.0 0.49" rpy="0 0.24 0" />
   </joint>
 
   <link name="camera_optical_link" />
@@ -457,6 +459,101 @@
     <child link="imu_link" />
     <origin xyz="0 0 0.48" rpy="0 0 0" />
   </joint>
+
+  <!-- Macro for Side-Mounted Waterproof Ultrasonic Sensors (JSN-SR04T Style) -->
+  <xacro:macro name="ultrasonic_sensor" params="name x y z yaw topic">
+    <link name="${name}_link">
+      <xacro:box_inertial mass="0.04" x="0.03" y="0.06" z="0.03">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+      </xacro:box_inertial>
+      <!-- Mounting stem down to base ring -->
+      <visual>
+        <origin xyz="-0.02 0 -0.11" rpy="0 0 0" />
+        <geometry>
+          <cylinder radius="0.012" length="0.22" />
+        </geometry>
+        <material name="cad_blue" />
+      </visual>
+      <!-- Ultrasonic transducer housing -->
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="0.03 0.06 0.032" />
+        </geometry>
+        <material name="sensor_black" />
+      </visual>
+      <!-- Dual transducer cylinders -->
+      <visual>
+        <origin xyz="0.018 0.015 0" rpy="0 ${M_PI/2.0} 0" />
+        <geometry>
+          <cylinder radius="0.009" length="0.012" />
+        </geometry>
+        <material name="cad_grey" />
+      </visual>
+      <visual>
+        <origin xyz="0.018 -0.015 0" rpy="0 ${M_PI/2.0} 0" />
+        <geometry>
+          <cylinder radius="0.009" length="0.012" />
+        </geometry>
+        <material name="cad_grey" />
+      </visual>
+    </link>
+
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="${name}_link" />
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 ${yaw}" />
+    </joint>
+
+    <gazebo reference="${name}_link">
+      <material>Gazebo/DarkGrey</material>
+      <sensor type="ray" name="${name}_sensor">
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>15.0</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.20</min_angle>
+              <max_angle>0.20</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>3</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.08</min_angle>
+              <max_angle>0.08</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.08</min>
+            <max>4.50</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.015</stddev>
+          </noise>
+        </ray>
+        <plugin name="${name}_plugin" filename="libgazebo_ros_ray_sensor.so">
+          <ros>
+            <remapping>~/out:=${topic}</remapping>
+          </ros>
+          <output_type>sensor_msgs/Range</output_type>
+          <radiation_type>ultrasound</radiation_type>
+          <frame_name>${name}_link</frame_name>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- 4 Ultrasonic Sensors on Every Side: Front (+X), Left (+Y), Right (-Y), Rear (-X) -->
+  <xacro:ultrasonic_sensor name="ultrasonic_front" x="0.47" y="0.0"  z="0.22" yaw="0.0"             topic="/ultrasonic/front" />
+  <xacro:ultrasonic_sensor name="ultrasonic_left"  x="0.0"  y="0.47" z="0.22" yaw="${M_PI/2.0}"    topic="/ultrasonic/left" />
+  <xacro:ultrasonic_sensor name="ultrasonic_right" x="0.0"  y="-0.47" z="0.22" yaw="${-M_PI/2.0}"  topic="/ultrasonic/right" />
+  <xacro:ultrasonic_sensor name="ultrasonic_rear"  x="-0.47" y="0.0" z="0.22" yaw="${M_PI}"        topic="/ultrasonic/rear" />
 
   <!-- ===================================================================== -->
   <!-- GAZEBO COLORS & SURFACE PROPERTIES                                    -->
@@ -521,7 +618,7 @@
       <update_rate>15.0</update_rate>
       <visualize>true</visualize>
       <camera name="head">
-        <horizontal_fov>1.3962634</horizontal_fov>
+        <horizontal_fov>1.5708</horizontal_fov>
         <image>
           <width>640</width>
           <height>480</height>
@@ -529,7 +626,7 @@
         </image>
         <clip>
           <near>0.05</near>
-          <far>25.0</far>
+          <far>30.0</far>
         </clip>
         <noise>
           <type>gaussian</type>

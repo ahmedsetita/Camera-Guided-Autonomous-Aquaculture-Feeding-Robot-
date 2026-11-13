@@ -29,6 +29,7 @@ setup(
             "fish_vision_node = scripts.fish_vision_node:main",
             "autonomous_brain_node = scripts.autonomous_brain_node:main",
             "esp32_serial_bridge_node = scripts.esp32_serial_bridge_node:main",
+            "aqua_web_dashboard_node = scripts.aqua_web_dashboard_node:main",
         ],
     },
 )
