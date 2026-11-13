@@ -269,7 +269,7 @@ sudo apt install -y \
 
 ```bash
 mkdir -p ~/autonomous_ws/src && cd ~/autonomous_ws/src
-git clone https://github.com/ahmedsetita/ROS-2-Aquaculture-Autonomous-Robot-Package.git aquaculture_autonomous_robot
+git clone https://github.com/ahmedsetita/Camera-Guided-Autonomous-Aquaculture-Feeding-Robot-.git aquaculture_autonomous_robot
 
 cd ~/autonomous_ws
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -320,7 +320,7 @@ ros2 launch aquaculture_autonomous_robot full_simulation.launch.py control_gui:=
 **Ahmed Setita**
 - GitHub: [@ahmedsetita](https://github.com/ahmedsetita)
 - Email: `ahmedsetita599@gmail.com`
-- Repository: [ROS-2-Aquaculture-Autonomous-Robot-Package](https://github.com/ahmedsetita/ROS-2-Aquaculture-Autonomous-Robot-Package)
+- Repository: [Camera-Guided-Autonomous-Aquaculture-Feeding-Robot-](https://github.com/ahmedsetita/Camera-Guided-Autonomous-Aquaculture-Feeding-Robot-)
 
 ---
 
