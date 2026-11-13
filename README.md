@@ -20,8 +20,8 @@ Feed accounts for **60–70% of operating costs** in commercial fish farms. Over
 ## 🎬 Demo Video
 
 <p align="center">
-  <a href="https://youtu.be/0TTR-zky1mw">
-    <img src="https://img.youtube.com/vi/0TTR-zky1mw/maxresdefault.jpg" alt="Autonomous Aquaculture Robot Simulation Demo" width="100%"/>
+  <a href="https://youtu.be/iXm9WUoXbpE">
+    <img src="https://img.youtube.com/vi/iXm9WUoXbpE/maxresdefault.jpg" alt="Autonomous Aquaculture Robot Simulation Demo" width="100%"/>
   </a>
   <br/>
   <em>▶️ <b>Click above to watch the autonomous simulation demo on YouTube</b></em>
